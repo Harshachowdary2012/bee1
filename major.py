@@ -2,7 +2,7 @@
 ================================================================================
 MAJOR PROJECT: ADVANCED SENTIMENT ANALYSIS ON INDIAN FINANCIAL NEWS
 ================================================================================
-Author: [Your Name]
+Author: HARSHA VARDHAN  K
 Date: October 2025
 Description: Comprehensive NLP-based sentiment analysis system using multiple
              machine learning and deep learning approaches with extensive
@@ -32,9 +32,7 @@ from datasets import load_dataset
 # NLP and Text Processing
 import nltk
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize, sent_tokenize
 from nltk.stem import PorterStemmer, WordNetLemmatizer
-from nltk.util import ngrams
 
 # Download required NLTK data
 print("\n[INFO] Downloading NLTK data packages...")
@@ -76,10 +74,8 @@ from sklearn.ensemble import (
     RandomForestClassifier, 
     GradientBoostingClassifier,
     AdaBoostClassifier,
-    ExtraTreesClassifier,
-    VotingClassifier
+    ExtraTreesClassifier
 )
-from sklearn.neighbors import KNeighborsClassifier
 
 # Metrics and Evaluation
 from sklearn.metrics import (
@@ -121,9 +117,15 @@ try:
     from tensorflow.keras.preprocessing.sequence import pad_sequences
     from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
     DEEP_LEARNING_AVAILABLE = True
-except:
+    print("[OK] TensorFlow imported successfully")
+except ImportError as e:
     DEEP_LEARNING_AVAILABLE = False
-    print("Warning: TensorFlow not available. Deep learning models will be skipped.")
+    print(f"[WARNING] TensorFlow not available: {e}")
+    print("[INFO] Deep learning models will be skipped.")
+except Exception as e:
+    DEEP_LEARNING_AVAILABLE = False
+    print(f"[WARNING] TensorFlow import error: {e}")
+    print("[INFO] Deep learning models will be skipped.")
 
 # Time and System
 import time
@@ -370,37 +372,39 @@ def comprehensive_cleaning(text):
     text = remove_extra_whitespace(text)
     return text
 
-# 4.3: Apply cleaning
+# 4.3: Apply cleaning (optimized single-pass approach)
 print("\n[STEP 3] Applying text cleaning pipeline...")
-print("  - Removing URLs...")
-df_processed['cleaned_step1'] = df_processed['Content'].apply(remove_urls)
+print("  - Processing text in batches for better performance...")
 
-print("  - Removing HTML tags...")
-df_processed['cleaned_step2'] = df_processed['cleaned_step1'].apply(remove_html)
+# Process in smaller batches to avoid memory issues and improve performance
+batch_size = 1000
+total_batches = (len(df_processed) + batch_size - 1) // batch_size
 
-print("  - Removing emojis...")
-df_processed['cleaned_step3'] = df_processed['cleaned_step2'].apply(remove_emojis)
+# Initialize columns
+df_processed['cleaned_text'] = ''
+df_processed['cleaned_no_stopwords'] = ''
+df_processed['stemmed_text'] = ''
+df_processed['lemmatized_text'] = ''
 
-print("  - Converting to lowercase...")
-df_processed['cleaned_step4'] = df_processed['cleaned_step3'].apply(to_lowercase)
+for i in range(0, len(df_processed), batch_size):
+    batch_end = min(i + batch_size, len(df_processed))
+    batch_data = df_processed.iloc[i:batch_end].copy()
+    
+    print(f"    Processing batch {i//batch_size + 1}/{total_batches} ({i+1}-{batch_end})")
+    
+    # Apply all cleaning steps in one pass
+    batch_data['cleaned_text'] = batch_data['Content'].apply(comprehensive_cleaning)
+    batch_data['cleaned_no_stopwords'] = batch_data['cleaned_text'].apply(remove_stopwords_func)
+    batch_data['stemmed_text'] = batch_data['cleaned_no_stopwords'].apply(stem_text)
+    batch_data['lemmatized_text'] = batch_data['cleaned_no_stopwords'].apply(lemmatize_text)
+    
+    # Update the main dataframe
+    df_processed.iloc[i:batch_end, df_processed.columns.get_loc('cleaned_text')] = batch_data['cleaned_text']
+    df_processed.iloc[i:batch_end, df_processed.columns.get_loc('cleaned_no_stopwords')] = batch_data['cleaned_no_stopwords']
+    df_processed.iloc[i:batch_end, df_processed.columns.get_loc('stemmed_text')] = batch_data['stemmed_text']
+    df_processed.iloc[i:batch_end, df_processed.columns.get_loc('lemmatized_text')] = batch_data['lemmatized_text']
 
-print("  - Removing punctuation...")
-df_processed['cleaned_step5'] = df_processed['cleaned_step4'].apply(remove_punctuation)
-
-print("  - Removing numbers...")
-df_processed['cleaned_step6'] = df_processed['cleaned_step5'].apply(remove_numbers)
-
-print("  - Removing extra whitespace...")
-df_processed['cleaned_text'] = df_processed['cleaned_step6'].apply(remove_extra_whitespace)
-
-print("  - Removing stopwords (separate column)...")
-df_processed['cleaned_no_stopwords'] = df_processed['cleaned_text'].apply(remove_stopwords_func)
-
-print("  - Applying stemming (separate column)...")
-df_processed['stemmed_text'] = df_processed['cleaned_no_stopwords'].apply(stem_text)
-
-print("  - Applying lemmatization (separate column)...")
-df_processed['lemmatized_text'] = df_processed['cleaned_no_stopwords'].apply(lemmatize_text)
+print("  - Text cleaning completed!")
 
 # 4.4: Remove empty texts
 print("\n[STEP 4] Removing empty texts...")
@@ -458,24 +462,101 @@ df_processed['unique_words'] = df_processed['cleaned_text'].apply(
 )
 df_processed['lexical_diversity'] = df_processed['unique_words'] / (df_processed['cleaned_word_count'] + 1)
 
-# 5.4: Sentiment-specific keywords (additional features)
-print("[STEP 4] Extracting sentiment keyword features...")
-positive_words = ['gain', 'profit', 'growth', 'rise', 'surge', 'high', 'increase', 'positive', 'up', 'rally']
-negative_words = ['loss', 'drop', 'fall', 'decline', 'crash', 'low', 'decrease', 'negative', 'down', 'plunge']
-neutral_words = ['stable', 'maintain', 'hold', 'steady', 'flat', 'unchanged']
+# 5.4: Financial sentiment-specific keywords (enhanced features)
+print("[STEP 4] Extracting financial sentiment keyword features...")
+print("  - Using domain-specific financial terms for better accuracy...")
 
+# Positive financial terms
+positive_words = [
+    'profit', 'beat estimates', 'growth', 'expansion', 'upgrade', 'record high', 
+    'bullish', 'recovery', 'outperform', 'strong demand', 'new contracts', 
+    'dividend increase', 'gain', 'rise', 'surge', 'increase', 'positive', 'up', 'rally'
+]
+
+# Negative financial terms  
+negative_words = [
+    'loss', 'downgrade', 'decline', 'cut', 'miss estimates', 'weak', 'slowdown', 
+    'debt', 'lawsuit', 'default', 'drop', 'underperform', 'reduced forecast', 
+    'slump', 'fall', 'crash', 'decrease', 'negative', 'down', 'plunge'
+]
+
+# Neutral financial terms
+neutral_words = [
+    'announces', 'reports', 'maintains', 'holds steady', 'unchanged', 
+    'in line with expectations', 'no change', 'continues operations',
+    'stable', 'maintain', 'hold', 'steady', 'flat'
+]
+
+print(f"  - Positive terms: {len(positive_words)} financial keywords")
+print(f"  - Negative terms: {len(negative_words)} financial keywords") 
+print(f"  - Neutral terms: {len(neutral_words)} financial keywords")
+
+# Count financial sentiment terms (simplified)
+def count_financial_terms(text, term_list):
+    """Count financial terms without detailed logging"""
+    return len([word for word in text.split() if word in term_list])
+
+print("  - Counting financial sentiment terms...")
 df_processed['positive_word_count'] = df_processed['cleaned_text'].apply(
-    lambda x: sum(1 for word in x.split() if word in positive_words)
+    lambda x: count_financial_terms(x, positive_words)
 )
 df_processed['negative_word_count'] = df_processed['cleaned_text'].apply(
-    lambda x: sum(1 for word in x.split() if word in negative_words)
+    lambda x: count_financial_terms(x, negative_words)
 )
 df_processed['neutral_word_count'] = df_processed['cleaned_text'].apply(
-    lambda x: sum(1 for word in x.split() if word in neutral_words)
+    lambda x: count_financial_terms(x, neutral_words)
 )
 
-# 5.5: N-gram features (for analysis, not used in model)
-print("[STEP 5] Analyzing N-grams...")
+# 5.5: Financial Terms Summary and N-gram Analysis
+print("[STEP 5] Financial Terms Summary and N-gram Analysis...")
+
+# Display financial terms summary
+print("\nFinancial Terms Summary:")
+print("=" * 50)
+total_positive = df_processed['positive_word_count'].sum()
+total_negative = df_processed['negative_word_count'].sum()
+total_neutral = df_processed['neutral_word_count'].sum()
+
+print(f"Total Positive Financial Terms Found: {total_positive:,}")
+print(f"Total Negative Financial Terms Found: {total_negative:,}")
+print(f"Total Neutral Financial Terms Found: {total_neutral:,}")
+print(f"Total Financial Terms: {total_positive + total_negative + total_neutral:,}")
+
+# Show most common terms
+print("\nMost Common Financial Terms by Category:")
+print("-" * 40)
+
+# Count individual terms across all texts
+all_positive_terms = []
+all_negative_terms = []
+all_neutral_terms = []
+
+for text in df_processed['cleaned_text']:
+    all_positive_terms.extend([word for word in text.split() if word in positive_words])
+    all_negative_terms.extend([word for word in text.split() if word in negative_words])
+    all_neutral_terms.extend([word for word in text.split() if word in neutral_words])
+
+from collections import Counter
+
+if all_positive_terms:
+    pos_counter = Counter(all_positive_terms)
+    print("Top 10 Positive Diaphrms:")
+    for term, count in pos_counter.most_common(10):
+        print(f"  {term}: {count}")
+
+if all_negative_terms:
+    neg_counter = Counter(all_negative_terms)
+    print("Top 10 Negative Diaphrms:")
+    for term, count in neg_counter.most_common(10):
+        print(f"  {term}: {count}")
+
+if all_neutral_terms:
+    neu_counter = Counter(all_neutral_terms)
+    print("Top 10 Neutral Diaphrms:")
+    for term, count in neu_counter.most_common(10):
+        print(f"  {term}: {count}")
+
+# N-gram analysis (silent)
 def get_top_ngrams(corpus, n=2, top_k=20):
     """Get top n-grams from corpus"""
     vec = CountVectorizer(ngram_range=(n, n), max_features=top_k).fit(corpus)
@@ -485,14 +566,10 @@ def get_top_ngrams(corpus, n=2, top_k=20):
     words_freq = sorted(words_freq, key=lambda x: x[1], reverse=True)
     return words_freq
 
-# Get bigrams for each sentiment
-print("  Analyzing bigrams by sentiment...")
+# Get bigrams for each sentiment (silent processing)
 for sentiment in df_processed['Sentiment'].unique():
     subset = df_processed[df_processed['Sentiment'] == sentiment]['cleaned_text']
     top_bigrams = get_top_ngrams(subset, n=2, top_k=10)
-    print(f"\n  Top bigrams for {sentiment}:")
-    for bigram, freq in top_bigrams[:5]:
-        print(f"    {bigram}: {freq}")
 
 # 5.6: Additional statistical features
 print("\n[STEP 6] Calculating additional statistical features...")
@@ -509,10 +586,11 @@ df_processed['special_char_count'] = df_original['Content'].apply(
 print("\n[OK] Feature engineering completed!")
 print(f"Total features created: {len(df_processed.columns)}")
 
+
 # Display feature summary
 print("\nFeature Summary:")
 feature_cols = ['cleaned_word_count', 'avg_word_length', 'lexical_diversity', 
-                'positive_word_count', 'negative_word_count']
+                'positive_word_count', 'negative_word_count', 'neutral_word_count']
 print(df_processed[feature_cols].describe())
 
 # ============================================================================
@@ -708,12 +786,18 @@ ml_results['Linear SVM'] = {
 print(f"Accuracy: {svm_accuracy:.4f} ({svm_accuracy*100:.2f}%)")
 print(f"Training time: {svm_time:.2f}s")
 
-# 9.4: Random Forest
+# 9.4: Random Forest (optimized)
 print("\n" + "-"*80)
 print("[MODEL 4/10] Random Forest Classifier")
 print("-"*80)
 start = time.time()
-rf_model = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+rf_model = RandomForestClassifier(
+    n_estimators=50,  # Reduced for faster training
+    max_depth=20,  # Limited depth
+    random_state=42, 
+    n_jobs=-1,
+    max_samples=0.8  # Use subset of samples for speed
+)
 rf_model.fit(X_train, y_train)
 rf_pred = rf_model.predict(X_test)
 rf_accuracy = accuracy_score(y_test, rf_pred)
@@ -727,12 +811,23 @@ ml_results['Random Forest'] = {
 print(f"Accuracy: {rf_accuracy:.4f} ({rf_accuracy*100:.2f}%)")
 print(f"Training time: {rf_time:.2f}s")
 
-# 9.5: Gradient Boosting
+# 9.5: Gradient Boosting (ultra-fast configuration)
 print("\n" + "-"*80)
 print("[MODEL 5/10] Gradient Boosting Classifier")
 print("-"*80)
 start = time.time()
-gb_model = GradientBoostingClassifier(n_estimators=100, random_state=42)
+gb_model = GradientBoostingClassifier(
+    n_estimators=25,  # Further reduced for speed
+    learning_rate=0.2,  # Higher learning rate for faster convergence
+    max_depth=4,  # Shallow trees for speed
+    max_features='sqrt',  # Use sqrt features for speed
+    subsample=0.8,  # Use subset of samples
+    random_state=42,
+    validation_fraction=0.1,
+    n_iter_no_change=5,  # Earlier stopping
+    tol=1e-3,  # Relaxed tolerance
+    warm_start=False  # Disable warm start for speed
+)
 gb_model.fit(X_train, y_train)
 gb_pred = gb_model.predict(X_test)
 gb_accuracy = accuracy_score(y_test, gb_pred)
@@ -745,13 +840,14 @@ ml_results['Gradient Boosting'] = {
 }
 print(f"Accuracy: {gb_accuracy:.4f} ({gb_accuracy*100:.2f}%)")
 print(f"Training time: {gb_time:.2f}s")
+print(f"Note: Ultra-fast configuration - 25 estimators, shallow trees")
 
-# 9.6: Decision Tree
+# 9.6: Decision Tree (simplified)
 print("\n" + "-"*80)
-print("[MODEL 6/10] Decision Tree Classifier")
+print("[MODEL 6/7] Decision Tree Classifier")
 print("-"*80)
 start = time.time()
-dt_model = DecisionTreeClassifier(random_state=42, max_depth=50)
+dt_model = DecisionTreeClassifier(random_state=42, max_depth=20)  # Reduced depth for speed
 dt_model.fit(X_train, y_train)
 dt_pred = dt_model.predict(X_test)
 dt_accuracy = accuracy_score(y_test, dt_pred)
@@ -765,31 +861,19 @@ ml_results['Decision Tree'] = {
 print(f"Accuracy: {dt_accuracy:.4f} ({dt_accuracy*100:.2f}%)")
 print(f"Training time: {dt_time:.2f}s")
 
-# 9.7: AdaBoost
+# 9.7: Extra Trees (fixed configuration)
 print("\n" + "-"*80)
-print("[MODEL 7/10] AdaBoost Classifier")
+print("[MODEL 7/7] Extra Trees Classifier")
 print("-"*80)
 start = time.time()
-ada_model = AdaBoostClassifier(n_estimators=100, random_state=42)
-ada_model.fit(X_train, y_train)
-ada_pred = ada_model.predict(X_test)
-ada_accuracy = accuracy_score(y_test, ada_pred)
-ada_time = time.time() - start
-ml_results['AdaBoost'] = {
-    'model': ada_model,
-    'accuracy': ada_accuracy,
-    'predictions': ada_pred,
-    'time': ada_time
-}
-print(f"Accuracy: {ada_accuracy:.4f} ({ada_accuracy*100:.2f}%)")
-print(f"Training time: {ada_time:.2f}s")
-
-# 9.8: Extra Trees
-print("\n" + "-"*80)
-print("[MODEL 8/10] Extra Trees Classifier")
-print("-"*80)
-start = time.time()
-et_model = ExtraTreesClassifier(n_estimators=100, random_state=42, n_jobs=-1)
+et_model = ExtraTreesClassifier(
+    n_estimators=50,  # Reduced for faster training
+    max_depth=20,  # Limited depth
+    random_state=42, 
+    n_jobs=-1,
+    bootstrap=True,  # Enable bootstrap for max_samples
+    max_samples=0.8  # Use subset of samples for speed
+)
 et_model.fit(X_train, y_train)
 et_pred = et_model.predict(X_test)
 et_accuracy = accuracy_score(y_test, et_pred)
@@ -803,45 +887,8 @@ ml_results['Extra Trees'] = {
 print(f"Accuracy: {et_accuracy:.4f} ({et_accuracy*100:.2f}%)")
 print(f"Training time: {et_time:.2f}s")
 
-# 9.9: SGD Classifier
-print("\n" + "-"*80)
-print("[MODEL 9/10] SGD Classifier")
-print("-"*80)
-start = time.time()
-sgd_model = SGDClassifier(max_iter=1000, random_state=42)
-sgd_model.fit(X_train, y_train)
-sgd_pred = sgd_model.predict(X_test)
-sgd_accuracy = accuracy_score(y_test, sgd_pred)
-sgd_time = time.time() - start
-ml_results['SGD Classifier'] = {
-    'model': sgd_model,
-    'accuracy': sgd_accuracy,
-    'predictions': sgd_pred,
-    'time': sgd_time
-}
-print(f"Accuracy: {sgd_accuracy:.4f} ({sgd_accuracy*100:.2f}%)")
-print(f"Training time: {sgd_time:.2f}s")
-
-# 9.10: Ridge Classifier
-print("\n" + "-"*80)
-print("[MODEL 10/10] Ridge Classifier")
-print("-"*80)
-start = time.time()
-ridge_model = RidgeClassifier(random_state=42)
-ridge_model.fit(X_train, y_train)
-ridge_pred = ridge_model.predict(X_test)
-ridge_accuracy = accuracy_score(y_test, ridge_pred)
-ridge_time = time.time() - start
-ml_results['Ridge Classifier'] = {
-    'model': ridge_model,
-    'accuracy': ridge_accuracy,
-    'predictions': ridge_pred,
-    'time': ridge_time
-}
-print(f"Accuracy: {ridge_accuracy:.4f} ({ridge_accuracy*100:.2f}%)")
-print(f"Training time: {ridge_time:.2f}s")
-
-print("\n[OK] All ML models trained successfully!")
+print("\n[OK] All 7 ML models trained successfully!")
+print("Models: Naive Bayes, Logistic Regression, Linear SVM, Random Forest, Gradient Boosting, Decision Tree, Extra Trees")
 
 # ============================================================================
 # SECTION 10: DEEP LEARNING MODELS
@@ -1154,150 +1201,11 @@ print(f"  Recall: {recall:.4f}")
 print(f"  F1-Score: {f1:.4f}")
 
 # ============================================================================
-# SECTION 12: ADVANCED VISUALIZATIONS
+# SECTION 12: CROSS-VALIDATION ANALYSIS
 # ============================================================================
 
 print("\n" + "="*100)
-print("SECTION 12: CREATING ADVANCED VISUALIZATIONS")
-print("="*100)
-
-# 12.1: Model Accuracy Comparison Chart
-print("\n[STEP 1] Creating model accuracy comparison chart...")
-plt.figure(figsize=(16, 8))
-model_names = list(ml_results.keys())
-accuracies = [ml_results[name]['accuracy'] * 100 for name in model_names]
-colors = ['#2ecc71' if name == best_model_name else '#3498db' for name in model_names]
-
-bars = plt.bar(model_names, accuracies, color=colors, edgecolor='black', linewidth=1.5)
-plt.xlabel('Models', fontsize=14, fontweight='bold')
-plt.ylabel('Accuracy (%)', fontsize=14, fontweight='bold')
-plt.title('Machine Learning Models Accuracy Comparison', fontsize=16, fontweight='bold')
-plt.xticks(rotation=45, ha='right')
-plt.ylim([0, 100])
-plt.grid(axis='y', alpha=0.3, linestyle='--')
-
-for bar, acc in zip(bars, accuracies):
-    height = bar.get_height()
-    plt.text(bar.get_x() + bar.get_width()/2., height,
-             f'{acc:.2f}%',
-             ha='center', va='bottom', fontsize=9, fontweight='bold')
-
-plt.tight_layout()
-plt.savefig('visualizations/ml_models_comparison.png', dpi=300)
-plt.close()
-
-# 12.2: Confusion Matrix Heatmap
-print("[STEP 2] Creating confusion matrix heatmap...")
-plt.figure(figsize=(10, 8))
-sns.heatmap(cm, annot=True, fmt='d', cmap='YlOrRd',
-            xticklabels=label_encoder.classes_,
-            yticklabels=label_encoder.classes_,
-            cbar_kws={'label': 'Count'})
-plt.title(f'Confusion Matrix - {best_model_name}', fontsize=16, fontweight='bold')
-plt.ylabel('Actual Sentiment', fontsize=12, fontweight='bold')
-plt.xlabel('Predicted Sentiment', fontsize=12, fontweight='bold')
-plt.tight_layout()
-plt.savefig('visualizations/confusion_matrix.png', dpi=300)
-plt.close()
-
-# 12.3: Training Time Comparison
-print("[STEP 3] Creating training time comparison...")
-plt.figure(figsize=(14, 6))
-training_times = [ml_results[name]['time'] for name in model_names]
-plt.barh(model_names, training_times, color='#e74c3c', edgecolor='black')
-plt.xlabel('Training Time (seconds)', fontsize=12, fontweight='bold')
-plt.ylabel('Models', fontsize=12, fontweight='bold')
-plt.title('Model Training Time Comparison', fontsize=14, fontweight='bold')
-plt.grid(axis='x', alpha=0.3)
-plt.tight_layout()
-plt.savefig('visualizations/training_time_comparison.png', dpi=300)
-plt.close()
-
-# 12.4: Word Clouds by Sentiment
-print("[STEP 4] Creating word clouds for each sentiment...")
-for sentiment in df_processed['Sentiment'].unique():
-    text = ' '.join(df_processed[df_processed['Sentiment'] == sentiment]['cleaned_text'])
-    wordcloud = WordCloud(width=800, height=400, background_color='white',
-                         colormap='viridis', max_words=100).generate(text)
-    
-    plt.figure(figsize=(12, 6))
-    plt.imshow(wordcloud, interpolation='bilinear')
-    plt.axis('off')
-    plt.title(f'Word Cloud - {sentiment} Sentiment', fontsize=16, fontweight='bold')
-    plt.tight_layout()
-    plt.savefig(f'visualizations/wordcloud_{sentiment.lower()}.png', dpi=300)
-    plt.close()
-
-# 12.5: Feature Importance (for tree-based models)
-if 'Random Forest' in ml_results:
-    print("[STEP 5] Creating feature importance plot...")
-    rf_model = ml_results['Random Forest']['model']
-    feature_importance = rf_model.feature_importances_
-    top_indices = np.argsort(feature_importance)[-20:]
-    top_features = [tfidf_vectorizer.get_feature_names_out()[i] for i in top_indices]
-    top_importances = feature_importance[top_indices]
-    
-    plt.figure(figsize=(12, 8))
-    plt.barh(top_features, top_importances, color='#9b59b6')
-    plt.xlabel('Importance', fontsize=12, fontweight='bold')
-    plt.ylabel('Features', fontsize=12, fontweight='bold')
-    plt.title('Top 20 Most Important Features (Random Forest)', fontsize=14, fontweight='bold')
-    plt.tight_layout()
-    plt.savefig('visualizations/feature_importance.png', dpi=300)
-    plt.close()
-
-# 12.6: Normalized confusion matrix
-print("[STEP 6] Creating normalized confusion matrix...")
-cm_normalized = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-plt.figure(figsize=(10, 8))
-sns.heatmap(cm_normalized, annot=True, fmt='.2%', cmap='Blues',
-            xticklabels=label_encoder.classes_,
-            yticklabels=label_encoder.classes_)
-plt.title(f'Normalized Confusion Matrix - {best_model_name}', fontsize=16, fontweight='bold')
-plt.ylabel('Actual Sentiment', fontsize=12, fontweight='bold')
-plt.xlabel('Predicted Sentiment', fontsize=12, fontweight='bold')
-plt.tight_layout()
-plt.savefig('visualizations/confusion_matrix_normalized.png', dpi=300)
-plt.close()
-
-# 12.7: Deep Learning Training History
-if DEEP_LEARNING_AVAILABLE and dl_results:
-    print("[STEP 7] Creating deep learning training history plots...")
-    for model_name, result in dl_results.items():
-        history = result['history']
-        
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-        
-        # Accuracy plot
-        ax1.plot(history.history['accuracy'], label='Training Accuracy')
-        ax1.plot(history.history['val_accuracy'], label='Validation Accuracy')
-        ax1.set_title(f'{model_name} - Accuracy', fontsize=12, fontweight='bold')
-        ax1.set_xlabel('Epoch')
-        ax1.set_ylabel('Accuracy')
-        ax1.legend()
-        ax1.grid(alpha=0.3)
-        
-        # Loss plot
-        ax2.plot(history.history['loss'], label='Training Loss')
-        ax2.plot(history.history['val_loss'], label='Validation Loss')
-        ax2.set_title(f'{model_name} - Loss', fontsize=12, fontweight='bold')
-        ax2.set_xlabel('Epoch')
-        ax2.set_ylabel('Loss')
-        ax2.legend()
-        ax2.grid(alpha=0.3)
-        
-        plt.tight_layout()
-        plt.savefig(f'visualizations/dl_{model_name.lower().replace(" ", "_")}_history.png', dpi=300)
-        plt.close()
-
-print("\n[OK] All visualizations created and saved!")
-
-# ============================================================================
-# SECTION 13: CROSS-VALIDATION ANALYSIS
-# ============================================================================
-
-print("\n" + "="*100)
-print("SECTION 13: CROSS-VALIDATION ANALYSIS")
+print("SECTION 12: CROSS-VALIDATION ANALYSIS")
 print("="*100)
 
 # Perform cross-validation on top 3 ML models
@@ -1338,23 +1246,49 @@ plt.close()
 print("\n[OK] Cross-validation completed!")
 
 # ============================================================================
-# SECTION 14: PREDICTION ON UNLABELED DATASET
+# SECTION 13: PREDICTION ON UNLABELED DATASET
 # ============================================================================
 
 print("\n" + "="*100)
-print("SECTION 14: PREDICTIONS ON UNLABELED DATASET")
+print("SECTION 13: PREDICTIONS ON UNLABELED DATASET")
 print("="*100)
 
-# Use best ML model for predictions
+# Use best model for predictions
 print(f"\n[STEP 1] Using {best_model_name} for predictions on unlabeled data...")
-best_ml_model = ml_results[best_model_name]['model']
 
-# Transform all data
-X_all_tfidf = tfidf_vectorizer.transform(df_fake['cleaned_text'])
+# Get the best model from appropriate results dictionary
+if best_model_name in ml_results:
+    best_ml_model = ml_results[best_model_name]['model']
+    use_tfidf = True
+elif DEEP_LEARNING_AVAILABLE and best_model_name in dl_results:
+    best_ml_model = dl_results[best_model_name]['model']
+    use_tfidf = False
+else:
+    # Fallback to first available ML model
+    best_model_name = list(ml_results.keys())[0]
+    best_ml_model = ml_results[best_model_name]['model']
+    use_tfidf = True
+    print(f"[WARNING] Best model not found, using {best_model_name} instead")
 
-# Predict
-predictions_all = best_ml_model.predict(X_all_tfidf)
-predicted_sentiments = label_encoder.inverse_transform(predictions_all)
+# Transform all data and predict based on model type
+if use_tfidf:
+    # ML model - use TF-IDF
+    X_all_tfidf = tfidf_vectorizer.transform(df_fake['cleaned_text'])
+    predictions_all = best_ml_model.predict(X_all_tfidf)
+    predicted_sentiments = label_encoder.inverse_transform(predictions_all)
+else:
+    # DL model - use sequences
+    if DEEP_LEARNING_AVAILABLE:
+        sequences_all = tokenizer.texts_to_sequences(df_fake['cleaned_text'])
+        padded_sequences_all = pad_sequences(sequences_all, maxlen=MAX_LEN, padding='post', truncating='post')
+        predictions_proba = best_ml_model.predict(padded_sequences_all)
+        predictions_all = np.argmax(predictions_proba, axis=1)
+        predicted_sentiments = label_encoder.inverse_transform(predictions_all)
+    else:
+        # Fallback to ML model
+        X_all_tfidf = tfidf_vectorizer.transform(df_fake['cleaned_text'])
+        predictions_all = best_ml_model.predict(X_all_tfidf)
+        predicted_sentiments = label_encoder.inverse_transform(predictions_all)
 
 # Create results dataframe
 df_predictions = df_fake.copy()
@@ -1402,11 +1336,11 @@ df_predictions[['Content', 'predicted_sentiment', 'actual_sentiment', 'match']].
 print(f"\n[OK] Predictions saved to '{predictions_file}'")
 
 # ============================================================================
-# SECTION 15: ERROR ANALYSIS
+# SECTION 14: ERROR ANALYSIS
 # ============================================================================
 
 print("\n" + "="*100)
-print("SECTION 15: ERROR ANALYSIS")
+print("SECTION 14: ERROR ANALYSIS")
 print("="*100)
 
 # Get misclassified samples
@@ -1450,11 +1384,11 @@ plt.close()
 print("\n[OK] Error analysis completed!")
 
 # ============================================================================
-# SECTION 16: MODEL PERSISTENCE
+# SECTION 15: MODEL PERSISTENCE
 # ============================================================================
 
 print("\n" + "="*100)
-print("SECTION 16: SAVING MODELS AND ARTIFACTS")
+print("SECTION 15: SAVING MODELS AND ARTIFACTS")
 print("="*100)
 
 # Create models directory
@@ -1512,11 +1446,11 @@ with open('models/results_summary.json', 'w') as f:
 print("\n[OK] All models and artifacts saved!")
 
 # ============================================================================
-# SECTION 17: FINAL REPORT AND SUMMARY
+# SECTION 16: FINAL REPORT AND SUMMARY
 # ============================================================================
 
 print("\n" + "="*100)
-print("SECTION 17: FINAL PROJECT REPORT")
+print("SECTION 16: FINAL PROJECT REPORT")
 print("="*100)
 
 report = f"""
@@ -1543,7 +1477,7 @@ SENTIMENT DISTRIBUTION:
 -----------------------
 {sentiment_counts.to_string()}
 
-MACHINE LEARNING MODELS TESTED: {len(ml_results)}
+MACHINE LEARNING MODELS TESTED: 7 (Simplified for Performance)
 --------------------------------------
 """
 
@@ -1646,56 +1580,6 @@ with open('PROJECT_REPORT.txt', 'w') as f:
 
 print("\n[OK] Final report saved to 'PROJECT_REPORT.txt'")
 
-# ============================================================================
-# SECTION 18: INTERACTIVE PREDICTION FUNCTION
-# ============================================================================
-
-print("\n" + "="*100)
-print("SECTION 18: INTERACTIVE PREDICTION SYSTEM")
-print("="*100)
-
-def predict_sentiment(text, model=best_ml_model, vectorizer=tfidf_vectorizer, encoder=label_encoder):
-    """
-    Predict sentiment for a given text
-    
-    Args:
-        text: Input text string
-        model: Trained model
-        vectorizer: Fitted vectorizer
-        encoder: Label encoder
-    
-    Returns:
-        Predicted sentiment
-    """
-    # Clean text
-    cleaned = comprehensive_cleaning(text)
-    # Vectorize
-    vectorized = vectorizer.transform([cleaned])
-    # Predict
-    prediction = model.predict(vectorized)[0]
-    # Decode
-    sentiment = encoder.inverse_transform([prediction])[0]
-    
-    return sentiment
-
-# Test with custom examples
-print("\n[STEP 1] Testing prediction function with custom examples...")
-test_examples = [
-    "Stock market crashes as investors panic sell amid economic uncertainty",
-    "Company reports record profits, shares surge to all-time high",
-    "Central bank maintains interest rates at current levels",
-    "Tech giant announces major layoffs, stock prices tumble",
-    "Steady growth expected in the coming quarter according to analysts"
-]
-
-print("\nCustom Prediction Examples:")
-print("=" * 100)
-for i, example in enumerate(test_examples, 1):
-    predicted = predict_sentiment(example)
-    print(f"\n{i}. Text: {example}")
-    print(f"   Predicted Sentiment: {predicted}")
-
-print("\n[OK] Prediction system ready!")
 
 # ============================================================================
 # PROJECT COMPLETION
